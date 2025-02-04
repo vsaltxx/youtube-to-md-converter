@@ -52,3 +52,24 @@ def is_accessible_youtube_url(url):
     except (requests.RequestException, requests.Timeout):
         return False
 
+def validate_youtube_url(url):
+    """
+    Validates whether a given URL is both a correctly formatted YouTube link and accessible.
+
+    The function first checks if the URL matches a valid YouTube video format.
+    Then, it sends a request to verify whether the video is reachable.
+
+    Returns:
+        bool: True if the URL is a valid YouTube video link and accessible, False otherwise.
+
+    Examples:
+        >>> validate_youtube_url("https://www.youtube.com/watch?v=DFYRQ_zQ-gk")
+        True
+        >>> validate_youtube_url("https://www.youtube.com/watch?v=invalid_video_id")
+        False
+        >>> validate_youtube_url("https://www.example.com/video")
+        False
+    """
+    if is_valid_youtube_url(url) and is_accessible_youtube_url(url):
+        return True
+    return False
