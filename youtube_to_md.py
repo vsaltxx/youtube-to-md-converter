@@ -1,4 +1,5 @@
 import re
+import requests
 
 def is_valid_youtube_url(url):
     """
@@ -25,4 +26,29 @@ def is_valid_youtube_url(url):
          r'^((?:https?:)?\/\/)?((?:www|m)\.)?((?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/))([\w\-]+)(\S+)?$'
     )
     return bool(re.match(youtube_url_pattern, url))
+
+def is_accessible_youtube_url(url):
+    """
+    Checks if a given YouTube URL is accessible by sending an HTTP request.
+
+    The function sends a HEAD request to the provided URL to determine if it is reachable.
+    A valid and accessible YouTube URL should return an HTTP status code of 200.
+
+    Returns:
+        bool: True if the URL is accessible (returns HTTP 200), False otherwise.
+
+    Examples:
+        >>> is_accessible_youtube_url("https://www.youtube.com/watch?v=DFYRQ_zQ-gk")
+        True
+        >>> is_accessible_youtube_url("https://www.youtube.com/watch?v=invalid_video_id")
+        False
+        >>> is_accessible_youtube_url("https://www.example.com/video")
+        False
+    """
+
+    try:
+        response = requests.head(url, allow_redirects=True, timeout=5)
+        return response.status_code == 200
+    except (requests.RequestException, requests.Timeout):
+        return False
 
