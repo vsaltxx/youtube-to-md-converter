@@ -81,7 +81,7 @@ def validate_youtube_url(url):
         return True
     return False
 
-def download_audio_from_youtube(url, output_folder="downloads", audio_format="mp3"):
+def download_audio_from_youtube(url, output_folder="downloads", audio_format="m4a"):
     """
     This function downloads the audio from a YouTube video given its URL.
     """
@@ -90,9 +90,10 @@ def download_audio_from_youtube(url, output_folder="downloads", audio_format="mp
         return False
 
     os.makedirs(output_folder, exist_ok=True)
-
+    # Whisper handles M4A and OPUS efficiently without conversion
+    # MP3 requires extra decoding, making it slightly less efficient for speech recognition.
     ydl_opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]",
         "extractaudio": True,
         "audioformat": audio_format,
         "outtmpl": f"{output_folder}/%(title)s.%(ext)s",
