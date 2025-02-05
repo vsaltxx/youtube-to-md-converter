@@ -112,11 +112,10 @@ def download_audio_from_youtube(url, output_folder="downloads", audio_format="mp
 def main():
     parser = argparse.ArgumentParser(description="YouTube URL Validator")
     parser.add_argument("url", type=str, help="The YouTube video URL to convert")
-    parser.add_argument("output", type=str, default="downloads", help="The output folder for the downloaded audio")
 
     args = parser.parse_args()
 
-    success = download_audio_from_youtube(args.url, args.output)
+    success = download_audio_from_youtube(args.url)
 
     if success:
         print("Download successful!")
