@@ -1,6 +1,5 @@
 import argparse
 import re
-import requests
 import os
 
 import yt_dlp
@@ -34,61 +33,26 @@ def is_valid_youtube_url(url):
 
 def is_accessible_youtube_url(url):
     """
-    Checks if a given YouTube URL is accessible by sending an HTTP request.
-
-    The function sends a HEAD request to the provided URL to determine if it is reachable.
-    A valid and accessible YouTube URL should return an HTTP status code of 200.
+    Checks if the given YouTube URL is accessible using yt-dlp.
 
     Returns:
-        bool: True if the URL is accessible (returns HTTP 200), False otherwise.
-
-    Examples:
-        >>> is_accessible_youtube_url("https://www.youtube.com/watch?v=DFYRQ_zQ-gk")
-        True
-        >>> is_accessible_youtube_url("https://www.youtube.com/watch?v=invalid_video_id")
-        False
-        >>> is_accessible_youtube_url("https://www.example.com/video")
-        False
+        bool: True if the video exists, False otherwise.
     """
-
+    ydl_opts = {
+        "quiet": True,          # Suppress unnecessary output
+        "no_warnings": True,    # Suppress warnings
+    }
     try:
-        response = requests.get(url, allow_redirects=True, timeout=5)
-        if response.status_code == 200 and "ytInitialPlayerResponse" in response.text:
-            return True
-        return False
-    except (requests.RequestException, requests.Timeout):
-        return False
-
-def validate_youtube_url(url):
-    """
-    Validates whether a given URL is both a correctly formatted YouTube link and accessible.
-
-    The function first checks if the URL matches a valid YouTube video format.
-    Then, it sends a request to verify whether the video is reachable.
-
-    Returns:
-        bool: True if the URL is a valid YouTube video link and accessible, False otherwise.
-
-    Examples:
-        >>> validate_youtube_url("https://www.youtube.com/watch?v=DFYRQ_zQ-gk")
-        True
-        >>> validate_youtube_url("https://www.youtube.com/watch?v=invalid_video_id")
-        False
-        >>> validate_youtube_url("https://www.example.com/video")
-        False
-    """
-    if is_valid_youtube_url(url) and is_accessible_youtube_url(url):
-        return True
-    return False
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False) # Extract video information without downloading
+            return True if info else False
+    except yt_dlp.utils.DownloadError:
+        return False # Video is not accessible
+    except Exception as e:
+        print(f"An error occurred while checking the video accessibility: {e}")
+        return False # Any other error
 
 def download_audio_from_youtube(url, output_folder="downloads", audio_format="m4a"):
-    """
-    This function downloads the audio from a YouTube video given its URL.
-    """
-    if not validate_youtube_url(url):
-        print("Invalid YouTube URL or URL is not accessible.")
-        return False
-
     os.makedirs(output_folder, exist_ok=True)
     # Whisper handles M4A and OPUS efficiently without conversion
     # MP3 requires extra decoding, making it slightly less efficient for speech recognition.
@@ -116,8 +80,14 @@ def main():
 
     args = parser.parse_args()
 
-    success = download_audio_from_youtube(args.url)
+    if not is_valid_youtube_url(args.url):
+        print("Invalid YouTube URL. Please provide a valid YouTube video URL.")
+        return
 
+    if not is_accessible_youtube_url(args.url):
+        return
+
+    success = download_audio_from_youtube(args.url)
     if success:
         print("Download successful!")
     else:

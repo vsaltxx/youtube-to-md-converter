@@ -1,9 +1,5 @@
 import unittest
-import requests
-
-from unittest.mock import patch
-
-from youtube_to_md import is_valid_youtube_url, is_accessible_youtube_url, validate_youtube_url
+from youtube_to_md import is_valid_youtube_url, is_accessible_youtube_url
 
 
 class TestYouTubeFunctions(unittest.TestCase):
@@ -59,39 +55,6 @@ class TestYouTubeFunctions(unittest.TestCase):
 
         for url in invalid_urls:
             self.assertFalse(is_valid_youtube_url(url))
-
-    def test_is_accessible_youtube_url(self):
-        """Test if is_accessible_youtube_url correctly validates accessibility."""
-        # Simulate a successful response
-        # Mock requests.head to return status code 200
-        with patch("requests.head") as mock_head:
-            mock_head.return_value.status_code = 200
-            self.assertTrue(is_accessible_youtube_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
-
-        # Simulate a response with a non-200 status code
-        with patch("requests.head") as mock_head:
-            mock_head.return_value.status_code = 404
-            self.assertFalse(is_accessible_youtube_url("https://www.youtube.com/watch?v=nonexistent_video"))
-
-        # Simulate a network exception
-        with patch("requests.head", side_effect=requests.RequestException):
-            self.assertFalse(is_accessible_youtube_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
-
-    def test_validate_youtube_url(self):
-        """Test if validate_youtube_url correctly validates format and accessibility."""
-        # Case 1: Valid YouTube URL and accessible (should return True)
-        with patch("requests.head") as mock_head:
-            mock_head.return_value.status_code = 200
-            self.assertTrue(validate_youtube_url("https://www.youtube.com/watch?v=DFYRQ_zQ-gk"))
-
-        # Case 2: Valid YouTube URL but inaccessible (should return False)
-        with patch("requests.head") as mock_head:
-            mock_head.return_value.status_code = 404
-            self.assertFalse(validate_youtube_url("https://www.youtube.com/watch?v=DFYRQ_zQ-gk"))
-
-        # Case 3: Invalid YouTube URL (should return False)
-        self.assertFalse(validate_youtube_url("https://www.example.com/watch?v=DFYRQ_zQ-gk"))
-
 
 if  __name__ == "__main__":
     unittest.main()
