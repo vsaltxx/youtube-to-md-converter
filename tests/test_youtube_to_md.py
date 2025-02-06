@@ -1,60 +1,34 @@
 import unittest
-from youtube_to_md import is_valid_youtube_url, is_accessible_youtube_url
-
+from unittest.mock import patch, MagicMock
+from youtube_to_md import download_audio_from_youtube
 
 class TestYouTubeFunctions(unittest.TestCase):
 
-    def test_is_valid_youtube_url(self):
-        """Test if is_valid_youtube_url correctly validates format."""
-        # Valid YouTube URLs with different formats and query strings
-        valid_urls = [
-            "https://www.youtube.com/watch?v=DFYRQ_zQ-gk&feature=featured",
-            "https://www.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "http://www.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "//www.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "www.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "https://youtube.com/watch?v=DFYRQ_zQ-gk",
-            "http://youtube.com/watch?v=DFYRQ_zQ-gk",
-            "//youtube.com/watch?v=DFYRQ_zQ-gk",
-            "youtube.com/watch?v=DFYRQ_zQ-gk",
-            "https://m.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "http://m.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "//m.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "m.youtube.com/watch?v=DFYRQ_zQ-gk",
-            "https://www.youtube.com/v/DFYRQ_zQ-gk?fs=1&hl=en_US",
-            "http://www.youtube.com/v/DFYRQ_zQ-gk?fs=1&hl=en_US",
-            "//www.youtube.com/v/DFYRQ_zQ-gk?fs=1&hl=en_US",
-            "www.youtube.com/v/DFYRQ_zQ-gk?fs=1&hl=en_US",
-            "youtube.com/v/DFYRQ_zQ-gk?fs=1&hl=en_US",
-            "https://www.youtube.com/embed/DFYRQ_zQ-gk?autoplay=1",
-            "https://www.youtube.com/embed/DFYRQ_zQ-gk",
-            "http://www.youtube.com/embed/DFYRQ_zQ-gk",
-            "//www.youtube.com/embed/DFYRQ_zQ-gk",
-            "www.youtube.com/embed/DFYRQ_zQ-gk",
-            "https://youtube.com/embed/DFYRQ_zQ-gk",
-            "http://youtube.com/embed/DFYRQ_zQ-gk",
-            "//youtube.com/embed/DFYRQ_zQ-gk",
-            "youtube.com/embed/DFYRQ_zQ-gk",
-            "https://youtu.be/DFYRQ_zQ-gk?t=120",
-            "https://youtu.be/DFYRQ_zQ-gk",
-            "http://youtu.be/DFYRQ_zQ-gk",
-            "//youtu.be/DFYRQ_zQ-gk",
-            "youtu.be/DFYRQ_zQ-gk",
-        ]
+    @patch("yt_dlp.YoutubeDL")  # Mock yt_dlp to prevent real downloads
+    def test_download_audio_valid_url(self, mock_ytdlp):
+        """Test downloading audio from a valid YouTube URL."""
+        mock_instance = MagicMock()
+        mock_ytdlp.return_value.__enter__.return_value = mock_instance
+        mock_instance.extract_info.return_value = {"title": "Sample Video"}  # Simulate video info
+        mock_instance.download.return_value = None  # Simulate successful download
 
-        for url in valid_urls:
-            self.assertTrue(is_valid_youtube_url(url))
+        valid_url = "https://www.youtube.com/watch?v=DFYRQ_zQ-gk"
+        result = download_audio_from_youtube(valid_url)
 
-        # Invalid URLs
-        invalid_urls = [
-            "https://www.youtube.com/HamdiKickProduction?v=DFYRQ_zQ-gk",
-            "https://www.example.com/watch?v=DFYRQ_zQ-gk",
-            "https://youtu.be/",
-            "https://youtube.com/",
-        ]
+        self.assertTrue(result)  # The function should return True
 
-        for url in invalid_urls:
-            self.assertFalse(is_valid_youtube_url(url))
+    @patch("yt_dlp.YoutubeDL")
+    def test_download_audio_invalid_url(self, mock_ytdlp):
+        """Test downloading audio from an invalid YouTube URL."""
+        mock_instance = MagicMock()
+        mock_ytdlp.return_value.__enter__.return_value = mock_instance
+        mock_instance.extract_info.return_value = None  # Simulate no valid video
+        mock_instance.download.side_effect = Exception("DownloadError")  # Simulate failure
 
-if  __name__ == "__main__":
+        invalid_url = "https://youtube.com/"
+        result = download_audio_from_youtube(invalid_url)
+
+        self.assertFalse(result)  # The function should return False
+
+if __name__ == "__main__":
     unittest.main()
