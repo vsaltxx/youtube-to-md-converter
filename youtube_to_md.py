@@ -4,6 +4,15 @@ import re
 import argparse
 import yt_dlp
 import whisper
+import groq
+
+from dotenv import load_dotenv
+
+# Load variables from .env file
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = "llama3-8b-8192"    # LLaMA 3.3 model on Groq
 
 # Constants
 OUTPUT_FOLDER = "downloads"
@@ -22,9 +31,10 @@ def get_video_metadata(url):
             "uploader": info.get("uploader", "Unknown"),
         }
 
-def safe_filename(title):
-    """Removes illegal characters from filenames."""
-    return re.sub(r'[<>:"/\\|?*]', "", title)
+def safe_filename(title, video_id):
+    """Removes illegal characters from filenames and appends video ID."""
+    sanitized_title = re.sub(r'[<>:"/\\|?*]', "", title)
+    return f"{sanitized_title}_{video_id}"
 
 def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=AUDIO_FORMAT, quiet=True):
     os.makedirs(output_folder, exist_ok=True)
@@ -63,20 +73,63 @@ def transcribe_audio(audio_file):
         print(f"Error during transcription: {e}")
         return None
 
+def process_text_with_llama(transcript):
+    """Uses LLaMA 3.3 via Groq API to process and format the transcript."""
+
+    if not GROQ_API_KEY:
+        print("Error: GROQ_API_KEY is not set. Please define it in your environment.")
+        sys.exit(1)
+
+    client = groq.Client(api_key=GROQ_API_KEY)
+
+    prompt = f"""
+    Format this transcript into a well-structured Markdown article.
+    - Add headings, bullet points, and summaries
+    - Keep the text readable and structured
+
+    Transcript:
+    {transcript}
+
+    Formatted Markdown:
+    """
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+    except groq.RateLimitError as e:
+        print(f"Rate limit error: {e}")
+        return None
+    except groq.AuthenticationError as e:
+        print(f"Authentication error: {e}")
+        return None
+    except groq.APIError as e:
+        print(f"API error: {e}")
+        return None
+    except Exception as e:
+        print(f"Error calling Groq API: {e}")
+        return None
+
 def format_transcript_to_markdown(transcript, metadata, url, output_folder="articles"):
     os.makedirs(output_folder, exist_ok=True)
+
+    video_id = url.split("v=")[-1].split("&")[0]            # Extract Video ID
+    formatted_text = process_text_with_llama(transcript)    # Process transcript using LLaMA 3.3
+
+    if formatted_text is None:
+        print("Error: Failed to format transcript using LLaMA 3.3.")
+        sys.exit(1)
 
     md_content = f"# {metadata['title']}\n\n"
     md_content += f"**Uploader:** {metadata['uploader']}\n"
     md_content += f"**Duration:** {metadata['duration']} seconds\n"
     md_content += f"**Original Video:** [{metadata['title']}]({url})\n\n"
     md_content += "---\n\n"
+    md_content += formatted_text
 
-    for paragraph in transcript.split("\n"):
-        if paragraph.strip():
-            md_content += f"{paragraph.strip()}\n\n"
-
-    output_file = os.path.join(output_folder, f"{safe_filename(metadata['title'])}.md")
+    output_file = os.path.join(output_folder, f"{safe_filename(metadata['title'], video_id)}.md")
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(md_content)
 
