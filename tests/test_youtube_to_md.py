@@ -9,9 +9,6 @@ from youtube_to_md import (
     split_text_into_chunks,
 )
 
-from youtube_to_md import MAX_TOKENS_PER_CHUNK
-
-
 class TestYouTubeToMarkdown(unittest.TestCase):
 
     @patch("yt_dlp.YoutubeDL")  # Mock yt_dlp to prevent real downloads
@@ -106,7 +103,8 @@ class TestYouTubeToMarkdown(unittest.TestCase):
         """Ensure long text is properly split based on token limits."""
         sample_text = "This is a test sentence. " * 5000  # Simulate a long text
         chunks = split_text_into_chunks(sample_text)
-        self.assertTrue(all(len(tiktoken.get_encoding("cl100k_base").encode(chunk)) <= MAX_TOKENS_PER_CHUNK for chunk in chunks) # Check token count for each chunk
+        limit_tokens_per_chunk = 4000 # the model token limit for one chunk is 6000 tokens, but we are using 4000 tokens for optimization
+        self.assertTrue(all(len(tiktoken.get_encoding("cl100k_base").encode(chunk)) <= limit_tokens_per_chunk for chunk in chunks) # Check token count for each chunk
 )
 
     @patch("groq.Client")
