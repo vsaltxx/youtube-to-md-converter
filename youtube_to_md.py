@@ -50,6 +50,9 @@ def get_video_metadata(url):
     except yt_dlp.utils.DownloadError as e:
         logging.error(f"Failed to get metadata: {e}")
         return None
+    except Exception as e:
+        logging.error(f"Unknown error: {e}")
+        return None
 
 
 def safe_filename(title, video_id, max_length=100):
@@ -88,21 +91,24 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
 
             video_id = info.get("id", "unknown")
             safe_name = safe_filename(info.get("title", "video"), video_id)
-            downloaded_file = os.path.join(output_folder, f"{safe_name}.{AUDIO_FORMAT_DOWNLOAD}")
+            expected_file_name = os.path.join(output_folder, f"{safe_name}.{AUDIO_FORMAT_DOWNLOAD}")
 
-            # Rename the downloaded file
-            original_file = ydl.prepare_filename(info).replace(".webm", f".{AUDIO_FORMAT_DOWNLOAD}")
-            os.rename(original_file, downloaded_file)
+            # The standardized filename that the script expects after renaming
+            downloaded_file = ydl.prepare_filename(info).replace(".webm", f".{AUDIO_FORMAT_DOWNLOAD}")
+            os.rename(downloaded_file, expected_file_name)  # Rename the actual downloaded file to match the standardized name
 
             # Convert to MP3
-            mp3_file = downloaded_file.rsplit(".", 1)[0] + f".{AUDIO_FORMAT_CONVERTED}"
-            AudioSegment.from_file(downloaded_file).export(mp3_file, format=AUDIO_FORMAT_CONVERTED)
-            os.remove(downloaded_file)  # Remove original file
+            mp3_file = expected_file_name.rsplit(".", 1)[0] + f".{AUDIO_FORMAT_CONVERTED}"
+            AudioSegment.from_file(expected_file_name).export(mp3_file, format=AUDIO_FORMAT_CONVERTED)
+            os.remove(downloaded_file)  # Remove the original downloaded file
 
             logging.info(f"Downloaded and converted: {mp3_file}")
             return mp3_file
     except yt_dlp.utils.DownloadError as e:
         logging.error(f"Download failed: {e}")
+        return None
+    except FileNotFoundError as e:
+        logging.error(f"File not found: {e}")
         return None
 
 
