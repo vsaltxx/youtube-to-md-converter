@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, MagicMock, mock_open, call
 import os
 from youtube_to_md import (
     get_video_metadata,
@@ -199,6 +199,40 @@ class TestYouTubeToMarkdown(unittest.TestCase):
         mock_open_file.assert_called_once_with(
             os.path.join("articles", "Test_Video_abcd123.md"), "w", encoding="utf-8"
         )
+
+    @patch("yt_dlp.YoutubeDL")
+    @patch("os.path.exists", return_value=True)  # Simulate that the expected file already exists
+    @patch("os.remove")  # Mock os.remove to prevent actual file deletion
+    @patch("os.rename")  # Mock os.rename to avoid real renaming
+    @patch("pydub.AudioSegment.from_file")  # Mock Pydub
+    def test_file_with_downloaded_file_name_exists(self, mock_pudub, mock_rename, mock_remove, mock_exists, mock_ytdlp):
+        """Test handling when the file with the downloaded file name already exists."""
+        mock_instance = MagicMock()
+        mock_ytdlp.return_value.__enter__.return_value = mock_instance
+        mock_instance.extract_info.return_value = {
+            "title": "Sample Video",
+            "id": "abcd1234",
+        }
+        mock_instance.prepare_filename.return_value = os.path.normpath("downloads/Sample_Video.m4a")
+
+        valid_url = "https://www.youtube.com/watch?v=DFYRQ_zQ-gk"
+        result = download_audio_from_youtube(valid_url)
+
+        expected_output = os.path.normpath("downloads/Sample_Video_abcd1234.mp3")
+
+        # Assert file removal was called due to pre-existing file
+        mock_remove.assert_has_calls([
+            call(os.path.normpath("downloads/Sample_Video_abcd1234.m4a")),
+            call(os.path.normpath("downloads/Sample_Video_abcd1234.m4a"))
+        ], any_order=False)
+
+        # Ensure rename was still called
+        mock_rename.assert_called_once_with(
+            os.path.normpath("downloads/Sample_Video.m4a"),
+            os.path.normpath("downloads/Sample_Video_abcd1234.m4a")
+        )
+
+        self.assertEqual(os.path.normpath(result), expected_output)
 
 if __name__ == "__main__":
     unittest.main()

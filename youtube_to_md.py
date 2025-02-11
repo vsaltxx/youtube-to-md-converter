@@ -75,8 +75,6 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
         "format": f"bestaudio[ext={AUDIO_FORMAT_DOWNLOAD}]",
         "outtmpl": f"{output_folder}/%(title)s.%(ext)s",
         "noplaylist": True,
-        # "quiet": quiet,
-        # "no_warnings": True,
         "retries": 10,
         "nocheckcertificate": True,
         "force_generic_extractor": True,
@@ -91,16 +89,32 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
 
             video_id = info.get("id", "unknown")
             safe_name = safe_filename(info.get("title", "video"), video_id)
-            expected_file_name = os.path.join(output_folder, f"{safe_name}.{AUDIO_FORMAT_DOWNLOAD}")
 
-            # The standardized filename that the script expects after renaming
-            downloaded_file = ydl.prepare_filename(info).replace(".webm", f".{AUDIO_FORMAT_DOWNLOAD}")
+            # Standardized filename expected by the script
+            expected_file_name = os.path.normpath(os.path.join(output_folder, f"{safe_name}.{AUDIO_FORMAT_DOWNLOAD}"))
+
+            # The actual filename yt-dlp downloads
+            downloaded_file = os.path.normpath(ydl.prepare_filename(info)).replace(".webm", f".{AUDIO_FORMAT_DOWNLOAD}")
+
+            logging.info(f"Expected filename: {expected_file_name}")
+            logging.info(f"Downloaded filename: {downloaded_file}")
+
+            # If expected file already exists, remove it to prevent rename conflicts
+            if os.path.exists(expected_file_name):
+                logging.warning(f"File {expected_file_name} already exists. Removing to avoid conflicts.")
+                os.remove(expected_file_name)
+
+            # Ensure the downloaded file exists before renaming
+            if not os.path.exists(downloaded_file):
+                logging.error(f"Downloaded file not found before renaming: {downloaded_file}")
+                return None  # Prevent renaming if the file is missing
+
             os.rename(downloaded_file, expected_file_name)  # Rename the actual downloaded file to match the standardized name
 
             # Convert to MP3
             mp3_file = expected_file_name.rsplit(".", 1)[0] + f".{AUDIO_FORMAT_CONVERTED}"
             AudioSegment.from_file(expected_file_name).export(mp3_file, format=AUDIO_FORMAT_CONVERTED)
-            os.remove(downloaded_file)  # Remove the original downloaded file
+            os.remove(expected_file_name)  # Remove the original downloaded file
 
             logging.info(f"Downloaded and converted: {mp3_file}")
             return mp3_file
@@ -109,6 +123,9 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
         return None
     except FileNotFoundError as e:
         logging.error(f"File not found: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
         return None
 
 
