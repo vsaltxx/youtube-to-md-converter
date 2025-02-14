@@ -21,13 +21,15 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OUTPUT_FOLDER = "downloads"
 AUDIO_FORMAT_DOWNLOAD = "m4a"
 AUDIO_FORMAT_CONVERTED = "mp3"
-GROQ_MODEL_WHISPER = "whisper-large-v3" # Whisper model on Groq
-GROQ_MODEL = "llama3-8b-8192"           # LLaMA 3.3 model on Groq
+GROQ_MODEL_WHISPER = "whisper-large-v3"  # Whisper model on Groq
+GROQ_MODEL = "llama3-8b-8192"  # LLaMA 3.3 model on Groq
 LOG_FILE = "youtube_to_md.log"
-MAX_TOKENS_PER_CHUNK = 4000  #Groq's API token limit is 6,000 tokens per request
-
+MAX_TOKENS_PER_CHUNK = 4000
 CHUNK_LENGTH_AUDIO_MS = 10 * 60 * 1000  # 10 minutes
 MAX_RETRIES = 3
+
+TOO_MANY_REQUESTS_ERROR = 429
+RATE_LIMIT_WAIT = 10  # seconds
 
 # Logging Setup
 logging.basicConfig(
@@ -37,8 +39,11 @@ logging.basicConfig(
 )
 
 
+def setup_output_folder(folder):
+    os.makedirs(folder, exist_ok=True)
+
+
 def get_video_metadata(url):
-    """ Fetches metadata for the YouTube video """
     try:
         with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -46,6 +51,7 @@ def get_video_metadata(url):
                 "title": info.get("title", "Unknown Title"),
                 "duration": info.get("duration", 0),
                 "uploader": info.get("uploader", "Unknown"),
+                "video_id": info.get("id", "unknown")
             }
     except yt_dlp.utils.DownloadError as e:
         logging.error(f"Failed to get metadata: {e}")
@@ -56,23 +62,19 @@ def get_video_metadata(url):
 
 
 def safe_filename(title, video_id, max_length=100):
-    """Cleans the filename by removing or replacing invalid characters."""
     title = unicodedata.normalize("NFKC", title)
-
-    # Remove invalid characters, but keep Unicode letters
     title = re.sub(r"[<>:\"/\\|?*]", "", title)  # Windows restrictions
     title = re.sub(r"\s+", "_", title).strip("_")  # Replace spaces with underscores
-
     return f"{title[:max_length]}_{video_id}"
 
 
-
-def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=AUDIO_FORMAT_DOWNLOAD, quiet=True):
-    """ Downloads YouTube audio and converts it to MP3 """
-    os.makedirs(output_folder, exist_ok=True)
+def download_audio(url, metadata, output_folder=OUTPUT_FOLDER, audio_format=AUDIO_FORMAT_DOWNLOAD):
+    setup_output_folder(output_folder)
+    safe_name = safe_filename(metadata["title"], metadata["video_id"])
+    expected_file_name = os.path.join(output_folder, f"{safe_name}.{audio_format}")
 
     ydl_opts = {
-        "format": f"bestaudio[ext={AUDIO_FORMAT_DOWNLOAD}]",
+        "format": f"bestaudio[ext={audio_format}]",
         "outtmpl": f"{output_folder}/%(title)s.%(ext)s",
         "noplaylist": True,
         "retries": 10,
@@ -80,24 +82,11 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
         "force_generic_extractor": True,
         "extractor_retries": 5
     }
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            if not info:
-                logging.error("Failed to retrieve video info.")
-                return None
-
-            video_id = info.get("id", "unknown")
-            safe_name = safe_filename(info.get("title", "video"), video_id)
-
-            # Standardized filename expected by the script
-            expected_file_name = os.path.normpath(os.path.join(output_folder, f"{safe_name}.{AUDIO_FORMAT_DOWNLOAD}"))
-
-            # The actual filename yt-dlp downloads
-            downloaded_file = os.path.normpath(ydl.prepare_filename(info)).replace(".webm", f".{AUDIO_FORMAT_DOWNLOAD}")
-
-            logging.info(f"Expected filename: {expected_file_name}")
-            logging.info(f"Downloaded filename: {downloaded_file}")
+            downloaded_file = ydl.prepare_filename(info).replace(".webm", f".{audio_format}")
 
             # If expected file already exists, remove it to prevent rename conflicts
             if os.path.exists(expected_file_name):
@@ -108,16 +97,8 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
             if not os.path.exists(downloaded_file):
                 logging.error(f"Downloaded file not found before renaming: {downloaded_file}")
                 return None  # Prevent renaming if the file is missing
-
-            os.rename(downloaded_file, expected_file_name)  # Rename the actual downloaded file to match the standardized name
-
-            # Convert to MP3
-            mp3_file = expected_file_name.rsplit(".", 1)[0] + f".{AUDIO_FORMAT_CONVERTED}"
-            AudioSegment.from_file(expected_file_name).export(mp3_file, format=AUDIO_FORMAT_CONVERTED)
-            os.remove(expected_file_name)  # Remove the original downloaded file
-
-            logging.info(f"Downloaded and converted: {mp3_file}")
-            return mp3_file
+            os.rename(downloaded_file, expected_file_name)
+            return expected_file_name
     except yt_dlp.utils.DownloadError as e:
         logging.error(f"Download failed: {e}")
         return None
@@ -129,25 +110,30 @@ def download_audio_from_youtube(url, output_folder=OUTPUT_FOLDER, audio_format=A
         return None
 
 
+def convert_audio_to_mp3(audio_file):
+    mp3_file = audio_file.rsplit(".", 1)[0] + f".{AUDIO_FORMAT_CONVERTED}"
+    AudioSegment.from_file(audio_file).export(mp3_file, format=AUDIO_FORMAT_CONVERTED)
+    os.remove(audio_file)
+    return mp3_file
+
+
 def split_audio(audio_file):
-    """ Splits audio into smaller chunks for processing """
     if not os.path.exists(audio_file):
         logging.error(f"File not found: {audio_file}")
         return []
 
     audio = AudioSegment.from_file(audio_file)
     chunks = []
+
     for i in range(0, len(audio), CHUNK_LENGTH_AUDIO_MS):
         chunk_path = f"{audio_file[:-4]}_part_{i // CHUNK_LENGTH_AUDIO_MS}.{AUDIO_FORMAT_CONVERTED}"
         audio[i: i + CHUNK_LENGTH_AUDIO_MS].export(chunk_path, format=AUDIO_FORMAT_CONVERTED)
         chunks.append(chunk_path)
-
     logging.info(f"Split into {len(chunks)} segments")
     return chunks
 
 
 def detect_dominant_language(text):
-    """Detect the most common language in a given text."""
     sentences = text.split("\n")
     lang_counts = Counter()
     detected_sentences = []
@@ -162,17 +148,11 @@ def detect_dominant_language(text):
                 detected_sentences.append((sentence, "unknown"))
 
     dominant_language = lang_counts.most_common(1)[0][0] if lang_counts else "unknown"
-
-    # Filter sentences by dominant language
     filtered_sentences = [s for s, lang in detected_sentences if lang == dominant_language]
     return "\n".join(filtered_sentences), dominant_language
 
-def transcribe_audio(audio_file):
-    """ Transcribes an audio file using Groq API """
-    if not os.path.isfile(audio_file):
-        logging.error(f"Audio file not found: {audio_file}")
-        return None, None
 
+def transcribe_audio(audio_file):
     client = groq.Client(api_key=GROQ_API_KEY)
     chunks = split_audio(audio_file)
     transcript = ""
@@ -187,52 +167,30 @@ def transcribe_audio(audio_file):
                         file=f,
                         response_format="json"
                     )
-
                 # Extract transcription and language safely
                 segment_transcript = getattr(response, "text", "")
                 segment_language = getattr(response, "language", "unknown")
-
                 transcript += segment_transcript + "\n"
                 detected_languages.append(segment_language)
                 os.remove(chunk)
-                break  # Success, exit retry loop
-
+                break # Exit loop if successful
+            except FileNotFoundError as e:
+                logging.error(f"File not found: {e}")
+                return None, None
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:  # Rate limit exceeded
-                    wait_time = (2 ** attempt) * 10  # Exponential backoff
+                if e.response.status_code == TOO_MANY_REQUESTS_ERROR:  # Rate limit exceeded
+                    wait_time = (2 ** attempt) * RATE_LIMIT_WAIT  # Exponential backoff
                     logging.warning(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
                     logging.error(f"Error transcribing {chunk}: {e}")
-                    break  # Exit on unknown error
+                    break
 
-        # Ensure all text is in one language
     refined_transcript, dominant_language = detect_dominant_language(transcript)
     return refined_transcript.strip(), dominant_language
 
-def format_transcript_to_markdown(formatted_text, metadata, url, output_folder="articles"):
-    """Formats and saves the transcript as a Markdown file."""
-    os.makedirs(output_folder, exist_ok=True)  # Ensure directory exists
 
-    video_id = url.split("v=")[-1].split("&")[0]  # Extract Video ID
-    clean_title = safe_filename(metadata["title"], video_id)
-
-    output_file = os.path.join(output_folder, f"{clean_title}.md")
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(
-            f"# {metadata['title']}\n\n"
-            f"**Uploader:** {metadata['uploader']}\n\n"
-            f"**Duration:** {metadata['duration']} seconds\n\n"
-            f"**Original Video:** [{metadata['title']}]({url})\n\n"
-            f"---\n\n{formatted_text}"
-        )
-
-    logging.info(f"Markdown file saved: {output_file}")
-
-
-def process_text_with_llama(transcript, detected_language):
-    """ Formats transcript into Markdown using LLaMA """
+def format_transcript_with_llama(transcript):
     if not GROQ_API_KEY:
         logging.critical("Missing API Key!")
         return None
@@ -242,7 +200,7 @@ def process_text_with_llama(transcript, detected_language):
                          range(0, len(transcript), MAX_TOKENS_PER_CHUNK)]
     formatted_chunks = []
 
-    os.makedirs("formatted_segments", exist_ok=True)  # Ensure folder exists
+    # os.makedirs("formatted_segments", exist_ok=True)  # Ensure folder exists
 
     for index, chunk in enumerate(transcript_chunks):
         prompt = f"""
@@ -253,43 +211,61 @@ def process_text_with_llama(transcript, detected_language):
 
         response = client.chat.completions.create(
             model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
             temperature=0.3,
         )
 
-        # Extract and clean the formatted text
         formatted_text = response.choices[0].message.content.strip()
-
-        # Remove unwanted introduction phrases (covers variations)
         formatted_text = re.sub(
             r"^\s*(Here is the formatted text:|Transcript:|Formatted text:|Here is your formatted Markdown:)", "",
             formatted_text, flags=re.IGNORECASE).strip()
 
-        # Save each segment for debugging
-        with open(f"formatted_segments/formatted_{index}.md", "w", encoding="utf-8") as fmt_file:
-            fmt_file.write(formatted_text)
+        # with open(f"formatted_segments/formatted_{index}.md", "w", encoding="utf-8") as fmt_file:
+        #     fmt_file.write(formatted_text)
 
         formatted_chunks.append(formatted_text)
 
     return "\n\n".join(formatted_chunks)
 
+
+def save_transcript_to_markdown(formatted_text, metadata, url, output_folder="articles"):
+    setup_output_folder(output_folder)
+    clean_title = safe_filename(metadata["title"], metadata["video_id"])
+    output_file = os.path.join(output_folder, f"{clean_title}.md")
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(
+            f"# {metadata['title']}\n\n"
+            f"**Uploader:** {metadata['uploader']}\n\n"
+            f"**Duration:** {metadata['duration']} seconds\n\n"
+            f"**Original Video:** [{metadata['title']}]({url})\n\n"
+            f"---\n\n{formatted_text}"
+        )
+    logging.info(f"Markdown file saved: {output_file}")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="YouTube video to Markdown article converter")
+    parser = argparse.ArgumentParser(description="YouTube video to Markdown converter")
     parser.add_argument("url", type=str, help="YouTube video URL")
     args = parser.parse_args()
 
-    audio_file = download_audio_from_youtube(args.url)
+    metadata = get_video_metadata(args.url)
+    if not metadata:
+        sys.exit(1)
+
+    audio_file = download_audio(args.url, metadata)
     if not audio_file:
         sys.exit(1)
 
-    transcript, detected_language = transcribe_audio(audio_file)
-    if not transcript:
-        sys.exit(1)
-
-    metadata = get_video_metadata(args.url)
-    formatted_transcript = process_text_with_llama(transcript, detected_language)
-    format_transcript_to_markdown(formatted_transcript, metadata, args.url)
-
+    mp3_file = convert_audio_to_mp3(audio_file)
+    transcript, _ = transcribe_audio(mp3_file)
+    formatted_text = format_transcript_with_llama(transcript)
+    save_transcript_to_markdown(formatted_text, metadata, args.url)
 
 
 if __name__ == "__main__":
