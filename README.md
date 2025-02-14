@@ -28,8 +28,8 @@ pip install -r requirements.txt
 ```sh
 python3.11 -m venv venv
 source venv/bin/activate  # On macOS/Linux
-venv\\Scripts\\activate   # On Windows
-
+venv\\Scripts\\activate    # On Windows
+```
 
 ### **2️⃣ Set Up API Keys**
 This script uses the **Groq API** for transcription and formatting. Create a `.env` file and add your API key:
