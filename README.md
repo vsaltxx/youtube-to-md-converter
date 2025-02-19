@@ -20,6 +20,17 @@ Before using the script, install all required dependencies:
 pip install -r requirements.txt
 ```
 
+### ⚠ Python Version Requirement  
+- This project requires **Python 3.11**.  
+- Groq’s `whisper-large-v3` and `llama3-8b-8192` models **are not compatible** with Python 3.12+ (including 3.13).  
+- If you're using a different Python version, consider creating a virtual environment with Python 3.11:  
+
+```sh
+python3.11 -m venv venv
+source venv/bin/activate  # On macOS/Linux
+venv\\Scripts\\activate    # On Windows
+```
+
 ### **2️⃣ Set Up API Keys**
 This script uses the **Groq API** for transcription and formatting. Create a `.env` file and add your API key:
 ```sh
