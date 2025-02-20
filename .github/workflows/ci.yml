@@ -1,0 +1,36 @@
+name: CI - YouTube to Markdown
+
+on:
+  push:
+    branches:
+      - main
+      - feat/youtube-to-md
+  pull_request:  # This makes it run for ALL PRs
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set GROQ API Key
+        run: echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> $GITHUB_ENV
+
+      - name: Run Unit Tests
+        run: |
+          source venv/bin/activate
+          python -m unittest discover tests
