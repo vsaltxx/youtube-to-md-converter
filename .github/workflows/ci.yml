@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/youtube-to-md
+  pull_request:  # This makes it run for ALL PRs
 
 jobs:
   test:
